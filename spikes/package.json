@@ -1,0 +1,15 @@
+{
+  "name": "nurse-apply-cockpit-spikes",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Week-1 de-risk spikes for the DesGro Nurse Application Cockpit: session/MFA persistence + ATS fill-reliability probe.",
+  "scripts": {
+    "session": "node session-spike.mjs",
+    "probe": "node probe-ats.mjs",
+    "postinstall": "echo '\\nNext: run  npx playwright install chromium\\n'"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

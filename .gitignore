@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+spikes/node_modules/
+
+# spike artifacts — may contain real candidate / portal data
+spikes/profiles/
+spikes/reports/
+SPIKE-RESULTS.md
+
+# secrets / env
+.env
+.env.*
+*.local
+
+# OS
+.DS_Store
