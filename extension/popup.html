@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <strong>Seek assist</strong>
+      <a id="settings" href="#">settings</a>
+    </header>
+
+    <div id="needsConfig" class="hidden note warn">
+      Set the cockpit URL + driver token in <a id="openOptions" href="#">settings</a>.
+    </div>
+
+    <div id="main" class="hidden">
+      <label class="lbl">Active candidate</label>
+      <select id="candidate"></select>
+
+      <div id="acctGuard" class="note hidden"></div>
+
+      <div id="onSeek" class="hidden">
+        <button id="fetchBtn" class="btn primary">Send jobs on this page → rank</button>
+        <button id="fillBtn" class="btn">Pre-fill this application</button>
+      </div>
+      <div id="offSeek" class="note">Open a Seek search or application page to enable the actions.</div>
+
+      <div id="status" class="status"></div>
+      <div id="results"></div>
+    </div>
+
+    <footer>Human logs in &amp; submits. This never submits.</footer>
+    <script src="popup.js"></script>
+  </body>
+</html>
