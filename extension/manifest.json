@@ -6,6 +6,8 @@
   "permissions": ["scripting", "activeTab", "storage", "tabs"],
   "host_permissions": [
     "https://*.seek.com.au/*",
+    "https://*.seek.com/*",
+    "https://au.seek.com/*",
     "https://nurse-apply-cockpit.vercel.app/*",
     "http://localhost:3000/*"
   ],

@@ -18,27 +18,8 @@ async function init() {
   }
   $('main').classList.remove('hidden');
 
-  try {
-    const data = await cockpit('/api/driver/candidates', 'GET');
-    candidates = data.candidates || [];
-  } catch (e) {
-    status('Cannot reach cockpit: ' + e.message, 'bad');
-    return;
-  }
-
+  // Wire controls + show the buttons/host FIRST, so a cockpit error never hides them.
   const sel = $('candidate');
-  sel.innerHTML = '';
-  for (const c of candidates) {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.displayName + (c.email ? ` · ${c.email}` : '');
-    sel.appendChild(opt);
-  }
-  activeId = cfg.activeCandidateId && candidates.some((c) => c.id === cfg.activeCandidateId)
-    ? cfg.activeCandidateId
-    : candidates[0]?.id;
-  if (activeId) sel.value = activeId;
-
   sel.addEventListener('change', async () => {
     activeId = sel.value;
     await chrome.storage.local.set({ activeCandidateId: activeId });
@@ -46,8 +27,27 @@ async function init() {
   });
   $('fetchBtn').addEventListener('click', () => guardRun(fetchJobs));
   $('fillBtn').addEventListener('click', () => guardRun(preFill));
-
   await refreshTabState();
+
+  // Load candidates (non-fatal — buttons stay visible if this fails).
+  try {
+    const data = await cockpit('/api/driver/candidates', 'GET');
+    candidates = data.candidates || [];
+    sel.innerHTML = '';
+    for (const c of candidates) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.displayName + (c.email ? ` · ${c.email}` : '');
+      sel.appendChild(opt);
+    }
+    activeId = cfg.activeCandidateId && candidates.some((c) => c.id === cfg.activeCandidateId)
+      ? cfg.activeCandidateId
+      : candidates[0]?.id;
+    if (activeId) sel.value = activeId;
+  } catch (e) {
+    status('Cannot reach cockpit: ' + e.message + ' (check settings URL/token)', 'bad');
+  }
+
   await checkAccount();
 }
 
@@ -69,13 +69,22 @@ async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
+// Matches seek.com.au AND au.seek.com (both contain "seek.com"), not evil-seek.com.
+function isSeekUrl(url) {
+  return /:\/\/(?:[^/]*\.)?seek\.com/i.test(url || '');
+}
 async function onSeek() {
   const tab = await activeTab();
-  return /:\/\/[^/]*seek\.com\.au/.test(tab?.url || '');
+  return isSeekUrl(tab?.url);
 }
 async function refreshTabState() {
-  const seek = await onSeek();
-  $('onSeek').classList.toggle('hidden', !seek);
+  const tab = await activeTab();
+  const seek = isSeekUrl(tab?.url);
+  // Buttons are always visible when configured; the hint shows where you are.
+  $('onSeek').classList.remove('hidden');
+  let host = tab?.url || '(no page)';
+  try { host = new URL(tab.url).host; } catch { /* keep raw */ }
+  $('offSeek').textContent = seek ? '' : `Current page: ${host} — open a Seek search or application page to use the buttons.`;
   $('offSeek').classList.toggle('hidden', seek);
 }
 
