@@ -20,6 +20,9 @@ export const env = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
   MODEL_SONNET: read('ANTHROPIC_MODEL_SONNET', 'claude-sonnet-4-6'),
   MODEL_HAIKU: read('ANTHROPIC_MODEL_HAIKU', 'claude-haiku-4-5'),
+  // Shared secret the local desktop driver presents (x-driver-token) to call
+  // /api/driver + /api/ai without an operator browser session. Empty = disabled.
+  DRIVER_TOKEN: process.env.DRIVER_TOKEN ?? '',
 };
 
 export const hasAnthropic = env.ANTHROPIC_API_KEY.length > 0;

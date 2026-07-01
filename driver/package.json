@@ -1,0 +1,16 @@
+{
+  "name": "nurse-apply-cockpit-driver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Assisted, human-in-the-loop desktop driver: connect a candidate's isolated Seek session (human completes the email-code login), fetch jobs into the cockpit for ranking, and pre-fill applications for human review + submit. NEVER auto-submits.",
+  "scripts": {
+    "connect": "node connect.mjs",
+    "fetch-jobs": "node fetch-jobs.mjs",
+    "apply": "node apply.mjs",
+    "postinstall": "echo '\\nNext: run  npx playwright install chromium\\n'"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

@@ -55,6 +55,10 @@ model Profile {
   ahpraRegNo       String?
   ahpraVerified    Boolean @default(false)
 
+  // Contact details (Seek login email + application autofill).
+  email            String?
+  phone            String?
+
   specialties      String  @default("[]") // JSON string[]
   yearsExp         Int     @default(0)
   locations        String  @default("[]") // JSON string[] (preferred AU locations)

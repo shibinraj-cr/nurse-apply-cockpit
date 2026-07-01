@@ -28,8 +28,11 @@ core of the Phase 1 vertical slice from [DESIGN.md](DESIGN.md) §7:
 - **Hash-chained, append-only audit log** with a live chain-verify check.
 - **Human-in-the-loop applications**: tailor → verify → pre-submit identity confirmation →
   truthfulness attestation → submit (documents frozen + hashed). Nothing auto-submits.
-- **Automation-layer seam** (`src/lib/automation/`) binding candidate ↔ isolated browser
-  profile with a wrong-account hard-stop; the live driver remains the Playwright spikes.
+- **Assisted desktop driver** (`driver/`) — a local, human-in-the-loop Playwright tool that
+  connects a candidate's own **Seek** session (you complete the email-code login), reads jobs
+  from pages you open → ranks them in the cockpit, and pre-fills applications for you to review
+  and submit. It never logs in headlessly, scrapes server-side, or auto-submits. Talks to the
+  cockpit via `/api/driver/*` with a shared `DRIVER_TOKEN`. See [`driver/README.md`](driver/README.md).
 
 ### Running the cockpit
 
@@ -80,6 +83,7 @@ src/
     actions/         server actions (candidates, profile, documents, jobs, apps, consent)
     automation/      cockpit-side seam for the Playwright driver (wrong-account hard-stop)
     crypto.ts, storage.ts, vault.ts, audit.ts, auth.ts, session.ts, db.ts, …
+driver/              assisted human-in-the-loop desktop driver (Seek connect / fetch / apply)
 spikes/              Week-1 de-risk toolkit (Playwright probes + protocols + templates)
 ```
 

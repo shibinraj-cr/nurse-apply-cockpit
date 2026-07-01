@@ -58,7 +58,8 @@ export function profileValuesFor(c: CandidateWithCore): Record<string, string> {
     fullName: c.displayName,
     yearsExperience: String(c.profile?.yearsExp ?? ''),
   };
+  if (c.profile?.email) out.email = c.profile.email;
+  if (c.profile?.phone) out.phone = c.profile.phone;
   if (c.profile?.ahpraRegNo && c.profile.ahpraVerified) out.ahpraNumber = c.profile.ahpraRegNo;
-  // email/phone/address would come from contact fields when present in the model.
   return out;
 }

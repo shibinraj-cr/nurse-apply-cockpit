@@ -17,6 +17,8 @@ export async function updateProfileFields(formData: FormData) {
   if (!candidateId) throw new Error('candidateId required');
 
   const data = {
+    email: String(formData.get('email') ?? '').trim() || null,
+    phone: String(formData.get('phone') ?? '').trim() || null,
     specialties: toJson(splitList(formData.get('specialties'))),
     locations: toJson(splitList(formData.get('locations'))),
     yearsExp: Math.max(0, parseInt(String(formData.get('yearsExp') ?? '0'), 10) || 0),

@@ -85,6 +85,14 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
           <Section title="Profile" description="Free-text facts. Verified facts (AHPRA) are locked separately.">
             <form action={updateProfileFields} className="space-y-3">
               <input type="hidden" name="candidateId" value={c.id} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Email (Seek login + autofill)" htmlFor="email">
+                  <input id="email" name="email" type="email" defaultValue={p?.email ?? ''} className="input" placeholder="candidate@email.com" />
+                </Field>
+                <Field label="Phone" htmlFor="phone">
+                  <input id="phone" name="phone" defaultValue={p?.phone ?? ''} className="input" placeholder="04xx xxx xxx" />
+                </Field>
+              </div>
               <Field label="Specialties (comma-separated)" htmlFor="specialties">
                 <input id="specialties" name="specialties" defaultValue={specialties} className="input" />
               </Field>
