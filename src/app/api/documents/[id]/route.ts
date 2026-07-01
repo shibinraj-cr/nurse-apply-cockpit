@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   let buf: Buffer;
   try {
-    buf = getBlob(version.blobRef);
+    buf = await getBlob(version.blobRef);
   } catch {
     return new NextResponse('blob unavailable', { status: 410 });
   }

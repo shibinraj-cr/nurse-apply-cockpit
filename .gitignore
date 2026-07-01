@@ -22,8 +22,9 @@ next-env.d.ts
 # Prisma / local DB (any depth)
 *.db
 *.db-journal
+.pgtmp/
 
-# Encrypted document blobs + vault (NEVER commit — real candidate data)
+# Legacy local encrypted store (blobs/vault now live in Postgres)
 storage/
 
 # OS

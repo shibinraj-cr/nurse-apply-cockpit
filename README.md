@@ -33,15 +33,21 @@ core of the Phase 1 vertical slice from [DESIGN.md](DESIGN.md) §7:
 
 ### Running the cockpit
 
+Needs a **PostgreSQL** database (encrypted document blobs + vaulted credentials are stored in
+the DB so it deploys to serverless hosts). Set `DATABASE_URL` + `DIRECT_URL` in `.env` first
+(a Neon free branch, or `docker run -e POSTGRES_PASSWORD=pw -p 5432:5432 postgres:16`).
+
 ```bash
-npm install            # installs deps + runs `prisma generate`
-npm run setup          # copies .env, pushes the schema, seeds sample data
-npm run dev            # http://localhost:3000  (operator password: cockpit-dev)
+cp .env.example .env    # set DATABASE_URL + DIRECT_URL to your Postgres
+npm install             # installs deps + runs `prisma generate`
+npm run setup           # pushes the schema + seeds sample data
+npm run dev             # http://localhost:3000  (operator password: cockpit-dev)
 ```
 
 AI features are **optional**: set `ANTHROPIC_API_KEY` in `.env` to use live models, or leave
 it blank to run the deterministic heuristic / no-key fallbacks. Useful scripts: `npm run build`,
-`npm run db:reset` (wipe + reseed), `npm run db:seed`.
+`npm run db:reset` (wipe + reseed), `npm run db:seed`. **Deploying to Vercel:** see
+[DEPLOY.md](DEPLOY.md).
 
 ### Week-1 de-risk spikes (still the viability gate)
 

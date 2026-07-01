@@ -103,6 +103,8 @@ async function main() {
   await prisma.candidate.deleteMany();
   await prisma.portalAdapter.deleteMany();
   await prisma.referenceFact.deleteMany();
+  await prisma.blob.deleteMany();
+  await prisma.vaultSecret.deleteMany();
 
   // ── Portal adapters (config-driven, versioned) ──
   for (const a of ADAPTER_SIGNATURES) {
@@ -148,7 +150,7 @@ async function main() {
 
   // Helper to make a resume document (encrypted at rest) from text.
   async function addResume(candidateId: string, text: string) {
-    const stored = putBlob(Buffer.from(text, 'utf8'));
+    const stored = await putBlob(Buffer.from(text, 'utf8'));
     const doc = await prisma.document.create({ data: { candidateId, type: 'resume', label: 'Master résumé' } });
     await prisma.documentVersion.create({
       data: {
@@ -164,7 +166,7 @@ async function main() {
   }
 
   async function addExpiringDoc(candidateId: string, type: string, filename: string, daysOut: number) {
-    const stored = putBlob(Buffer.from(`sample ${type} for ${candidateId}`, 'utf8'));
+    const stored = await putBlob(Buffer.from(`sample ${type} for ${candidateId}`, 'utf8'));
     const doc = await prisma.document.create({ data: { candidateId, type } });
     await prisma.documentVersion.create({
       data: {
@@ -221,8 +223,9 @@ async function main() {
       mfaNotes: 'SMS OTP to registered mobile',
     },
   });
+  const mariaVaultRef = await putSecret({ username: 'maria.santos', password: 'sample-not-real' });
   await prisma.credential.create({
-    data: { portalAccountId: mariaPortal.id, vaultRef: putSecret({ username: 'maria.santos', password: 'sample-not-real' }) },
+    data: { portalAccountId: mariaPortal.id, vaultRef: mariaVaultRef },
   });
   await appendAudit({ actor: 'seed', action: 'candidate.create', candidateId: maria.id, after: { displayName: maria.displayName } });
 

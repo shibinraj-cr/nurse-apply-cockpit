@@ -1,24 +1,10 @@
 // Encrypted-at-rest blob store for documents (DESIGN.md §6). Plaintext never
-// touches disk: every blob is AES-256-GCM ciphertext. Metadata lives in the DB
-// (DocumentVersion); this module owns the opaque blobRef <-> ciphertext mapping.
-// NODE-ONLY.
+// touches disk or DB: every blob is AES-256-GCM ciphertext stored in the Blob
+// table (Vercel's serverless filesystem is ephemeral, so no local files). The
+// opaque blobRef is the Blob row id. NODE-ONLY.
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import { encryptBuffer, decryptBuffer, sha256 } from './crypto';
-
-const ROOT = path.resolve(process.cwd(), 'storage', 'docs');
-
-function ensureRoot() {
-  mkdirSync(ROOT, { recursive: true });
-}
-
-function refToPath(ref: string): string {
-  // Guard against path traversal — refs are uuids we mint.
-  const safe = ref.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(ROOT, `${safe}.enc`);
-}
+import { prisma } from './db';
 
 export interface StoredBlob {
   blobRef: string;
@@ -27,22 +13,19 @@ export interface StoredBlob {
 }
 
 /** Encrypt + persist a plaintext buffer. Returns the opaque ref + plaintext hash. */
-export function putBlob(plain: Buffer): StoredBlob {
-  ensureRoot();
-  const ref = randomUUID();
+export async function putBlob(plain: Buffer): Promise<StoredBlob> {
   const enc = encryptBuffer(plain);
-  writeFileSync(refToPath(ref), enc);
-  return { blobRef: ref, sha256: sha256(plain), sizeBytes: plain.length };
+  const row = await prisma.blob.create({ data: { data: new Uint8Array(enc) } });
+  return { blobRef: row.id, sha256: sha256(plain), sizeBytes: plain.length };
 }
 
 /** Read + decrypt a blob by ref. Throws if missing or tampered. */
-export function getBlob(ref: string): Buffer {
-  const p = refToPath(ref);
-  if (!existsSync(p)) throw new Error(`blob not found: ${ref}`);
-  return decryptBuffer(readFileSync(p));
+export async function getBlob(ref: string): Promise<Buffer> {
+  const row = await prisma.blob.findUnique({ where: { id: ref } });
+  if (!row) throw new Error(`blob not found: ${ref}`);
+  return decryptBuffer(Buffer.from(row.data));
 }
 
-export function deleteBlob(ref: string): void {
-  const p = refToPath(ref);
-  if (existsSync(p)) rmSync(p);
+export async function deleteBlob(ref: string): Promise<void> {
+  await prisma.blob.deleteMany({ where: { id: ref } });
 }

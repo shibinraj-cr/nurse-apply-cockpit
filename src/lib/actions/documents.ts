@@ -17,7 +17,7 @@ export async function uploadDocument(formData: FormData) {
 
   const validUntilRaw = String(formData.get('validUntil') ?? '').trim();
   const buf = Buffer.from(await file.arrayBuffer());
-  const stored = putBlob(buf);
+  const stored = await putBlob(buf);
 
   // One Document per (candidate,type); new uploads become the current version.
   let doc = await prisma.document.findFirst({ where: { candidateId, type } });
@@ -74,7 +74,7 @@ export async function setCurrentVersion(versionId: string, candidateId: string) 
 export async function deleteDocumentVersion(versionId: string, candidateId: string) {
   const version = await prisma.documentVersion.findUnique({ where: { id: versionId } });
   if (!version) return;
-  deleteBlob(version.blobRef);
+  await deleteBlob(version.blobRef);
   await prisma.documentVersion.delete({ where: { id: versionId } });
   await appendAudit({
     actor: 'operator',

@@ -1,14 +1,10 @@
 // Zero-knowledge-pattern credential vault (DESIGN.md §1/§6). Secrets are stored
-// only as ciphertext; the DB holds an opaque `vaultRef`, never plaintext. Every
-// fetch is just-in-time and writes an immutable VaultAccessEvent. NODE-ONLY.
+// only as ciphertext in the VaultSecret table; the DB holds an opaque `vaultRef`
+// (the row id), never plaintext. Every fetch is just-in-time and writes an
+// immutable VaultAccessEvent. NODE-ONLY.
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import { encryptString, decryptString } from './crypto';
 import { prisma } from './db';
-
-const ROOT = path.resolve(process.cwd(), 'storage', 'vault');
 
 export interface PortalSecret {
   username: string;
@@ -16,27 +12,19 @@ export interface PortalSecret {
   notes?: string;
 }
 
-function ensureRoot() {
-  mkdirSync(ROOT, { recursive: true });
-}
-function refToPath(ref: string): string {
-  const safe = ref.replace(/[^a-zA-Z0-9_-]/g, '');
-  return path.join(ROOT, `${safe}.vault`);
-}
-
 /** Encrypt + store a secret. Returns an opaque vaultRef to persist in the DB. */
-export function putSecret(secret: PortalSecret): string {
-  ensureRoot();
-  const ref = randomUUID();
-  writeFileSync(refToPath(ref), encryptString(JSON.stringify(secret)));
-  return ref;
+export async function putSecret(secret: PortalSecret): Promise<string> {
+  const row = await prisma.vaultSecret.create({
+    data: { data: encryptString(JSON.stringify(secret)) },
+  });
+  return row.id;
 }
 
 /** Low-level decrypt by ref. Prefer {@link accessSecretJIT} which also audits. */
-export function readSecret(ref: string): PortalSecret {
-  const p = refToPath(ref);
-  if (!existsSync(p)) throw new Error(`vault ref not found: ${ref}`);
-  return JSON.parse(decryptString(readFileSync(p, 'utf8'))) as PortalSecret;
+export async function readSecret(ref: string): Promise<PortalSecret> {
+  const row = await prisma.vaultSecret.findUnique({ where: { id: ref } });
+  if (!row) throw new Error(`vault ref not found: ${ref}`);
+  return JSON.parse(decryptString(row.data)) as PortalSecret;
 }
 
 /**
@@ -62,7 +50,7 @@ export async function accessSecretJIT(opts: {
     );
   }
 
-  const secret = readSecret(account.credential.vaultRef);
+  const secret = await readSecret(account.credential.vaultRef);
   const event = await prisma.vaultAccessEvent.create({
     data: {
       portalAccountId: opts.portalAccountId,

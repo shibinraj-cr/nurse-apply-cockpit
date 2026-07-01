@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         { status: 415 },
       );
     }
-    cvText = getBlob(version.blobRef).toString('utf8');
+    cvText = (await getBlob(version.blobRef)).toString('utf8');
   }
 
   if (!cvText) return NextResponse.json({ error: 'cvText or documentVersionId required' }, { status: 400 });

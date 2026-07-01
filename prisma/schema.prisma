@@ -1,21 +1,25 @@
 // DesGro Nurse Application Cockpit — data model (DESIGN.md §2, candidate-centric)
 //
-// Provider: SQLite for zero-setup local dev. SQLite has no native enums or scalar
-// arrays, so:
+// Provider: PostgreSQL (Vercel-ready — serverless filesystems are ephemeral, so
+// encrypted document blobs + vault secrets are stored IN the database, not on disk).
 //   • "enum" fields are String with the allowed values documented inline and
-//     enforced in TypeScript (see src/lib/types.ts).
-//   • "array" / structured fields are String holding JSON (see jsonArray()/json()
-//     helpers in src/lib/utils.ts).
-// Swap `provider = "postgresql"` + a Postgres DATABASE_URL for production, then
-// promote the documented enums/arrays to native Postgres types.
+//     enforced in TypeScript (see src/lib/types.ts) — could be promoted to native
+//     Postgres enums later.
+//   • "array" / structured fields are String holding JSON (see jsonArray() in
+//     src/lib/utils.ts).
+//
+// DATABASE_URL = pooled connection (runtime); DIRECT_URL = direct connection used
+// by `prisma db push`/migrations (Neon/Vercel Postgres). Set DIRECT_URL = DATABASE_URL
+// when there is no connection pooler.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Candidate (aggregate root) ──────────────────────────────────────────────
@@ -333,4 +337,20 @@ model ReferenceFact {
   notes       String?
 
   @@index([key, effectiveAt])
+}
+
+// ─── Encrypted-at-rest storage (in DB — Vercel FS is ephemeral) ──────────────
+// Ciphertext only. DocumentVersion.blobRef → Blob.id; Credential.vaultRef →
+// VaultSecret.id. See src/lib/storage.ts and src/lib/vault.ts.
+
+model Blob {
+  id        String   @id @default(cuid())
+  data      Bytes    // AES-256-GCM ciphertext (iv|tag|ciphertext)
+  createdAt DateTime @default(now())
+}
+
+model VaultSecret {
+  id        String   @id @default(cuid())
+  data      String   // base64 AES-256-GCM ciphertext of the JSON secret
+  createdAt DateTime @default(now())
 }

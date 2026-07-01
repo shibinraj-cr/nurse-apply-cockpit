@@ -33,7 +33,7 @@ export async function createPortalAccount(formData: FormData) {
   });
 
   if (username && password) {
-    const vaultRef = putSecret({ username, password });
+    const vaultRef = await putSecret({ username, password });
     await prisma.credential.create({ data: { portalAccountId: account.id, vaultRef } });
   }
 
