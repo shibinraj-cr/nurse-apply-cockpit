@@ -21,43 +21,41 @@ export async function prefillLoginEmail(page, email) {
 export async function scrapeJobs(page) {
   return page.evaluate(() => {
     const origin = location.origin;
-    const cards = Array.from(
-      document.querySelectorAll(
-        '[data-automation="normalJob"], [data-automation="premiumJob"], article[data-card-type="JobCard"], article[data-testid="job-card"]',
-      ),
-    );
+    let anchors = Array.from(document.querySelectorAll('a[data-automation="jobTitle"]'));
+    if (anchors.length === 0) {
+      anchors = Array.from(document.querySelectorAll('a[href*="/job/"]')).filter(
+        (a) => /\/job\/\d+/.test(a.getAttribute('href') || '') && (a.innerText || '').trim().length > 3,
+      );
+    }
     const out = [];
-    for (const card of cards) {
-      const titleEl = card.querySelector(
-        '[data-automation="jobTitle"], a[data-automation="jobTitle"], h3 a, a[href*="/job/"]',
-      );
-      const title = titleEl && titleEl.innerText ? titleEl.innerText.trim() : '';
+    const seen = new Set();
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/\/job\/(\d+)/);
+      const externalId = m ? m[1] : href;
+      if (!externalId || seen.has(externalId)) continue;
+      const title = (a.innerText || '').trim();
       if (!title) continue;
-      const companyEl = card.querySelector(
-        '[data-automation="jobCompany"], [data-automation="jobCardCompany"], [data-automation="advertiserName"]',
-      );
-      const locEl = card.querySelector('[data-automation="jobLocation"], [data-automation="jobCardLocation"]');
-      const descEl = card.querySelector(
-        '[data-automation="jobShortDescription"], [data-testid="job-card-teaser"]',
-      );
-      const worktypeEl = card.querySelector('[data-automation="jobWorkType"]');
-      const salaryEl = card.querySelector('[data-automation="jobSalary"]');
-      const href = titleEl.getAttribute('href') || '';
-      const url = href.startsWith('http') ? href : href ? origin + href : null;
-      const idFromUrl = (url || '').match(/\/job\/(\d+)/);
-      const externalId = idFromUrl ? idFromUrl[1] : card.getAttribute('data-job-id') || url || title;
+      seen.add(externalId);
+      const url = href.startsWith('http') ? href : origin + href;
+      let card = a.closest('article') || a.closest('[data-automation="normalJob"],[data-card-type="JobCard"]');
+      if (!card) {
+        card = a;
+        for (let i = 0; i < 5 && card.parentElement; i++) {
+          card = card.parentElement;
+          if (card.querySelector('[data-automation="jobCompany"],[data-automation="jobLocation"]')) break;
+        }
+      }
+      const q = (s) => { const el = card.querySelector(s); return el && el.innerText ? el.innerText.trim() : null; };
       out.push({
         externalId,
         title,
-        employer: companyEl && companyEl.innerText ? companyEl.innerText.trim() : 'Unknown',
-        location: locEl && locEl.innerText ? locEl.innerText.trim() : null,
-        worktype: worktypeEl && worktypeEl.innerText ? worktypeEl.innerText.trim() : null,
-        salary: salaryEl && salaryEl.innerText ? salaryEl.innerText.trim() : null,
+        employer: q('[data-automation="jobCompany"], [data-automation="jobCardCompany"], [data-automation="advertiserName"]') || 'Unknown',
+        location: q('[data-automation="jobLocation"], [data-automation="jobCardLocation"]'),
+        worktype: q('[data-automation="jobWorkType"]'),
+        salary: q('[data-automation="jobSalary"]'),
         url,
-        rawText: [title, companyEl?.innerText, locEl?.innerText, descEl?.innerText]
-          .filter(Boolean)
-          .join(' — ')
-          .slice(0, 2000),
+        rawText: (card.innerText || title).replace(/\s+/g, ' ').trim().slice(0, 2000),
       });
     }
     return out;
