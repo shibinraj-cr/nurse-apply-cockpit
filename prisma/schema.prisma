@@ -1,0 +1,336 @@
+// DesGro Nurse Application Cockpit — data model (DESIGN.md §2, candidate-centric)
+//
+// Provider: SQLite for zero-setup local dev. SQLite has no native enums or scalar
+// arrays, so:
+//   • "enum" fields are String with the allowed values documented inline and
+//     enforced in TypeScript (see src/lib/types.ts).
+//   • "array" / structured fields are String holding JSON (see jsonArray()/json()
+//     helpers in src/lib/utils.ts).
+// Swap `provider = "postgresql"` + a Postgres DATABASE_URL for production, then
+// promote the documented enums/arrays to native Postgres types.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Candidate (aggregate root) ──────────────────────────────────────────────
+
+model Candidate {
+  id          String   @id @default(cuid())
+  displayName String
+  // status: prospect | onboarding | active | placed | withdrawn
+  status      String   @default("onboarding")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile           Profile?
+  registrationState RegistrationState?
+  documents         Document[]
+  portalAccounts    PortalAccount[]
+  consentRecords    ConsentRecord[]
+  applications      Application[]
+  rankings          Ranking[]
+  vaultAccessEvents VaultAccessEvent[]
+  auditLogs         AuditLog[]
+}
+
+// ─── Profile (verified facts are LOCKED, never AI-writable) ──────────────────
+
+model Profile {
+  id          String    @id @default(cuid())
+  candidateId String    @unique
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  // VERIFIED + locked once confirmed by a human. Never AI-writable.
+  ahpraRegNo       String?
+  ahpraVerified    Boolean @default(false)
+
+  specialties      String  @default("[]") // JSON string[]
+  yearsExp         Int     @default(0)
+  locations        String  @default("[]") // JSON string[] (preferred AU locations)
+  qualifications   String  @default("[]") // JSON: {name, institution, country, year}[]
+  englishTest      String? // JSON: {type, scores:{listening,reading,writing,speaking,overall}, date}
+  // workRights: citizen | pr | sponsored_visa | student | bridging | none | unknown
+  workRights       String  @default("unknown")
+  visaSubclass     String?
+  // selfCheckStream: A | B | C  (AHPRA self-check stream)
+  selfCheckStream  String?
+  // pathway: streamlined1 | streamlined2 | oba | unknown
+  pathway          String  @default("unknown")
+  referees         String  @default("[]") // JSON: {name, role, org, email, phone}[]
+  masterCvText     String? // grounding source for anti-fabrication tailoring
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── RegistrationState (STATEFUL, gates applications) ────────────────────────
+
+model RegistrationState {
+  id          String    @id @default(cuid())
+  candidateId String    @unique
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  // status: self_check | oba_in_progress | lodged | under_assessment | registered | lapsed
+  status      String   @default("self_check")
+  // division: RN_Div1 | EN | unknown
+  division    String   @default("unknown")
+  endorsements String  @default("[]") // JSON string[]
+  conditions   String  @default("[]") // JSON string[]
+  expiry       DateTime?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+}
+
+// ─── Documents + versions (expiry tracked, content encrypted at rest) ────────
+
+model Document {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  // type: resume | cert | ahpra | passport | english | police | wwcc | reference | other
+  type        String
+  label       String?
+  createdAt   DateTime  @default(now())
+
+  versions DocumentVersion[]
+}
+
+model DocumentVersion {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  blobRef    String   // path/key into the encrypted blob store (ciphertext only)
+  filename   String
+  mime       String
+  sizeBytes  Int      @default(0)
+  sha256     String   // hash of PLAINTEXT, for integrity + submit-time freezing
+  validFrom  DateTime?
+  validUntil DateTime?
+  isCurrent  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([documentId, isCurrent])
+}
+
+// ─── Portal accounts + credential vault ──────────────────────────────────────
+
+model PortalAccount {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  portal           String  // vendor key, e.g. taleo | workday | mercury | seek
+  tenantUrl        String?
+  username         String?
+  // provisioningState: none | created | verified | locked
+  provisioningState String @default("none")
+  browserProfileId  String? // binds to an isolated Playwright userDataDir
+  mfaNotes          String?
+  createdAt         DateTime @default(now())
+
+  credential        Credential?
+  applications      Application[]
+  vaultAccessEvents VaultAccessEvent[]
+}
+
+model Credential {
+  id              String   @id @default(cuid())
+  portalAccountId String   @unique
+  portalAccount   PortalAccount @relation(fields: [portalAccountId], references: [id], onDelete: Cascade)
+
+  vaultRef     String   // opaque ref into the encrypted vault — NEVER plaintext
+  lastRotated  DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+// Immutable-ish credential access log (vault is a single point of failure).
+model VaultAccessEvent {
+  id              String    @id @default(cuid())
+  portalAccountId String
+  portalAccount   PortalAccount @relation(fields: [portalAccountId], references: [id], onDelete: Cascade)
+  candidateId     String
+  candidate       Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  actor           String
+  reason          String
+  ts              DateTime  @default(now())
+
+  applications Application[]
+
+  @@index([candidateId])
+}
+
+// ─── Consent (APP 3: informed / specific / current) ──────────────────────────
+
+model ConsentRecord {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  // scope: hold_docs | apply_on_behalf | disclose_to_employer
+  scope       String
+  employer    String?   // required when scope = disclose_to_employer
+  signedAt    DateTime  @default(now())
+  expiry      DateTime?
+  revokedAt   DateTime?
+  evidenceRef String?
+
+  applications Application[]
+
+  @@index([candidateId, scope])
+}
+
+// ─── Jobs / discovery ────────────────────────────────────────────────────────
+
+model Job {
+  id         String   @id @default(cuid())
+  source     String   // seek | taleo | workday | mercury | snaphire | manual | ...
+  externalId String
+  title      String
+  employer   String
+  location   String?
+  specialty  String?
+  worktype   String?  // full_time | part_time | casual | contract
+  salary     String?
+  rawText    String   // posting body — grounding for classification + ranking
+  url        String?
+  fetchedAt  DateTime @default(now())
+
+  rankings         Ranking[]
+  sponsorshipClass SponsorshipClass?
+  applications     Application[]
+
+  @@unique([source, externalId])
+}
+
+model Ranking {
+  id                String    @id @default(cuid())
+  jobId             String
+  job               Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidateId       String
+  candidate         Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  fitScore          Int       // 0-100
+  specialtyMatch    Int       // 0-100
+  locationMatch     Int       // 0-100
+  experienceGapYears Int      @default(0)
+  registrationOk    Boolean   @default(false)
+  rationale         String
+  model             String    // model id that produced this
+  stage             String    @default("interactive") // interactive | batch
+  createdAt         DateTime  @default(now())
+
+  @@unique([jobId, candidateId])
+}
+
+model SponsorshipClass {
+  id            String   @id @default(cuid())
+  jobId         String   @unique
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // status: SPONSORSHIP_AVAILABLE | WORKING_RIGHTS_REQUIRED | CONDITIONAL | UNKNOWN
+  status        String   @default("UNKNOWN")
+  evidenceQuote String?  // verbatim snippet from the posting
+  confidence    Float    @default(0)
+  visaSubclass  String?
+  method        String   @default("heuristic") // heuristic | model
+  model         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ─── Applications (frozen + attested at submit) ──────────────────────────────
+
+model Application {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  portal      String
+  // status: queued | drafting | ready_for_review | needs_manual | submitted | rejected | interview | offer | withdrawn
+  status      String    @default("queued")
+
+  docVersionsAttached String  @default("[]") // JSON: {documentVersionId, sha256, filename}[] frozen at submit
+  tailoredResume      String? // tailored prose (reviewed before submit)
+  tailoredCoverLetter String?
+
+  consentRecordId       String?
+  consentRecord         ConsentRecord? @relation(fields: [consentRecordId], references: [id])
+  credentialAccessEventId String?
+  credentialAccessEvent   VaultAccessEvent? @relation(fields: [credentialAccessEventId], references: [id])
+  portalAccountId       String?
+  portalAccount         PortalAccount? @relation(fields: [portalAccountId], references: [id])
+
+  reviewerId      String?
+  attestationText String?
+  attestationTs   DateTime?
+  submittedAt     DateTime?
+
+  followUpAt DateTime?
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([candidateId, jobId, portal])
+  @@index([candidateId, status])
+}
+
+// ─── Portal adapters (config-driven, versioned) ──────────────────────────────
+
+model PortalAdapter {
+  id               String   @id @default(cuid())
+  hostnamePattern  String   @unique
+  vendor           String
+  tenantId         String?
+  version          Int      @default(1)
+  selectorMap      String   @default("{}")  // JSON
+  fallbackChains   String   @default("{}")  // JSON
+  fieldConfidenceRules String @default("{}") // JSON
+  // status: healthy | degraded | unknown
+  status           String   @default("unknown")
+  notes            String?
+  updatedAt        DateTime @updatedAt
+}
+
+// ─── Audit (append-only, hash-chained) ───────────────────────────────────────
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  seq         Int       @unique // assigned monotonically in code (see lib/audit.ts)
+  actor       String
+  action      String
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  entityRef   String?
+  before      String?   // JSON snapshot
+  after       String?   // JSON snapshot
+  prevHash    String    @default("")
+  hash        String    @default("")
+  ts          DateTime  @default(now())
+
+  @@index([candidateId])
+  @@index([ts])
+}
+
+// ─── Dated reference table for volatile migration facts (never hardcode) ─────
+
+model ReferenceFact {
+  id          String   @id @default(cuid())
+  key         String   // e.g. tsmit_threshold | comparable_country | english_benchmark
+  value       String
+  effectiveAt DateTime
+  source      String?
+  notes       String?
+
+  @@index([key, effectiveAt])
+}

@@ -10,7 +10,21 @@ SPIKE-RESULTS.md
 # secrets / env
 .env
 .env.*
+!.env.example
 *.local
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Prisma / local DB (any depth)
+*.db
+*.db-journal
+
+# Encrypted document blobs + vault (NEVER commit — real candidate data)
+storage/
 
 # OS
 .DS_Store
