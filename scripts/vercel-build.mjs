@@ -10,7 +10,7 @@ import { execSync } from 'node:child_process';
 const env = { ...process.env };
 
 env.DATABASE_URL ||= env.POSTGRES_PRISMA_URL || env.POSTGRES_URL || '';
-env.DIRECT_URL ||= env.POSTGRES_URL_NON_POOLING || env.DATABASE_URL || '';
+env.DIRECT_URL ||= env.POSTGRES_URL_NON_POOLING || env.DATABASE_URL_UNPOOLED || env.DATABASE_URL || '';
 
 if (!env.DATABASE_URL || env.DATABASE_URL.includes('localhost')) {
   console.error(
