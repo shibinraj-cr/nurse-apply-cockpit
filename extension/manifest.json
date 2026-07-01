@@ -8,6 +8,7 @@
     "https://*.seek.com.au/*",
     "https://*.seek.com/*",
     "https://au.seek.com/*",
+    "https://jobs.health.nsw.gov.au/*",
     "https://nurse-apply-cockpit.vercel.app/*",
     "http://localhost:3000/*"
   ],

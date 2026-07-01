@@ -4,60 +4,115 @@ import { PageHeader, Section, Badge, Field } from '@/components/ui';
 import { createJob, rankActiveForJob } from '@/lib/actions/jobs';
 import { getActiveCandidateId } from '@/lib/session';
 import { SPONSORSHIP_META, type SponsorshipStatus } from '@/lib/types';
-import { truncate } from '@/lib/utils';
+import { cn, truncate } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
-export default async function JobsPage() {
+const FILTERS: { key: string; status: SponsorshipStatus | 'all'; label: string }[] = [
+  { key: 'all', status: 'all', label: 'All' },
+  { key: 'available', status: 'SPONSORSHIP_AVAILABLE', label: 'Sponsorship available' },
+  { key: 'conditional', status: 'CONDITIONAL', label: 'Conditional' },
+  { key: 'unknown', status: 'UNKNOWN', label: 'Unknown' },
+  { key: 'wr', status: 'WORKING_RIGHTS_REQUIRED', label: 'Working rights req.' },
+];
+const PRIORITY: Record<SponsorshipStatus, number> = {
+  SPONSORSHIP_AVAILABLE: 0,
+  CONDITIONAL: 1,
+  UNKNOWN: 2,
+  WORKING_RIGHTS_REQUIRED: 3,
+};
+
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sponsor?: string }>;
+}) {
+  const sp = await searchParams;
+  const activeFilter = FILTERS.find((f) => f.key === sp.sponsor) ?? FILTERS[0];
   const activeId = await getActiveCandidateId();
+
   const jobs = await prisma.job.findMany({
-    orderBy: { fetchedAt: 'desc' },
     include: {
       sponsorshipClass: true,
       rankings: activeId ? { where: { candidateId: activeId } } : false,
     },
   });
 
+  const spOf = (j: (typeof jobs)[number]) => (j.sponsorshipClass?.status ?? 'UNKNOWN') as SponsorshipStatus;
+  const fitOf = (j: (typeof jobs)[number]) => (Array.isArray(j.rankings) ? j.rankings[0]?.fitScore ?? -1 : -1);
+
+  const counts: Record<string, number> = { all: jobs.length };
+  for (const j of jobs) counts[spOf(j)] = (counts[spOf(j)] ?? 0) + 1;
+
+  const filtered = (activeFilter.status === 'all' ? jobs : jobs.filter((j) => spOf(j) === activeFilter.status)).sort(
+    (a, b) => PRIORITY[spOf(a)] - PRIORITY[spOf(b)] || fitOf(b) - fitOf(a),
+  );
+
   return (
     <div>
       <PageHeader
         title="Jobs & ranking"
-        description="Discovery is decoupled from apply. Paste a posting → auto sponsorship-classify → rank vs the active candidate."
+        description="Sponsorship-available roles are flagged + sorted to the top. Classification uses the posting text — send the full job description (extension/driver) for an accurate flag."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
-          <Section title={`Postings (${jobs.length})`}>
-            {jobs.length === 0 ? (
-              <p className="text-sm text-slate-500">No postings yet — add one on the right.</p>
+          {/* Sponsorship filter tabs */}
+          <div className="flex flex-wrap gap-2">
+            {FILTERS.map((f) => {
+              const n = f.status === 'all' ? counts.all : counts[f.status] ?? 0;
+              const active = f.key === activeFilter.key;
+              return (
+                <Link
+                  key={f.key}
+                  href={f.key === 'all' ? '/jobs' : `/jobs?sponsor=${f.key}`}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset',
+                    active
+                      ? 'bg-slate-900 text-white ring-slate-900'
+                      : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50',
+                  )}
+                >
+                  {f.label} <span className="opacity-70">{n}</span>
+                </Link>
+              );
+            })}
+          </div>
+
+          <Section title={`Postings (${filtered.length})`}>
+            {filtered.length === 0 ? (
+              <p className="text-sm text-slate-500">No postings in this view.</p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {jobs.map((j) => {
-                  const sp = (j.sponsorshipClass?.status ?? 'UNKNOWN') as SponsorshipStatus;
-                  const meta = SPONSORSHIP_META[sp];
+                {filtered.map((j) => {
+                  const status = spOf(j);
+                  const meta = SPONSORSHIP_META[status];
                   const ranking = Array.isArray(j.rankings) ? j.rankings[0] : undefined;
                   return (
                     <li key={j.id} className="py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <Link
-                            href={`/jobs/${j.id}`}
-                            className="text-sm font-semibold text-slate-900 hover:underline"
-                          >
-                            {j.title}
-                          </Link>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/jobs/${j.id}`}
+                              className="text-sm font-semibold text-slate-900 hover:underline"
+                            >
+                              {j.title}
+                            </Link>
+                            <Badge tone={meta.tone}>{meta.label}</Badge>
+                            {j.sponsorshipClass?.visaSubclass && (
+                              <Badge tone="blue">subclass {j.sponsorshipClass.visaSubclass}</Badge>
+                            )}
+                          </div>
                           <p className="truncate text-xs text-slate-500">
                             {j.employer} · {j.location ?? '—'} · {j.source}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {ranking && <Badge tone="blue">fit {ranking.fitScore}</Badge>}
-                          <Badge tone={meta.tone}>{meta.short}</Badge>
-                        </div>
+                        {ranking && <Badge tone="blue">fit {ranking.fitScore}</Badge>}
                       </div>
                       {j.sponsorshipClass?.evidenceQuote && (
-                        <p className="mt-1 border-l-2 border-slate-200 pl-2 text-xs italic text-slate-500">
-                          “{truncate(j.sponsorshipClass.evidenceQuote, 140)}”
+                        <p className="mt-1 border-l-2 border-emerald-300 pl-2 text-xs italic text-slate-600">
+                          “{truncate(j.sponsorshipClass.evidenceQuote, 160)}”
                         </p>
                       )}
                       {activeId && (
@@ -81,7 +136,7 @@ export default async function JobsPage() {
           <form action={createJob} className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Source" htmlFor="source">
-                <input id="source" name="source" className="input" placeholder="seek / taleo / manual" defaultValue="manual" />
+                <input id="source" name="source" className="input" placeholder="seek / nswhealth / manual" defaultValue="manual" />
               </Field>
               <Field label="External ID" htmlFor="externalId">
                 <input id="externalId" name="externalId" className="input" placeholder="auto" />

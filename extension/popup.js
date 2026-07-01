@@ -26,6 +26,7 @@ async function init() {
     await checkAccount();
   });
   $('fetchBtn').addEventListener('click', () => guardRun(fetchJobs));
+  $('sendJobBtn').addEventListener('click', () => guardRun(sendThisJob));
   $('fillBtn').addEventListener('click', () => guardRun(preFill));
   await refreshTabState();
 
@@ -69,23 +70,22 @@ async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
-// Matches seek.com.au AND au.seek.com (both contain "seek.com"), not evil-seek.com.
-function isSeekUrl(url) {
-  return /:\/\/(?:[^/]*\.)?seek\.com/i.test(url || '');
-}
-async function onSeek() {
-  const tab = await activeTab();
-  return isSeekUrl(tab?.url);
-}
+// Supported job sites. `scrape` runs in the page; `source` tags the cockpit Job.
+const SITES = [
+  { id: 'seek', source: 'seek', name: 'Seek', re: /:\/\/(?:[^/]*\.)?seek\.com/i, scrape: pageScrapeJobsSeek },
+  { id: 'nswhealth', source: 'nswhealth', name: 'NSW Health', re: /jobs\.health\.nsw\.gov\.au/i, scrape: pageScrapeJobsNsw },
+];
+function siteFor(url) { return SITES.find((s) => s.re.test(url || '')) || null; }
+async function currentSite() { const tab = await activeTab(); return siteFor(tab?.url); }
+
 async function refreshTabState() {
   const tab = await activeTab();
-  const seek = isSeekUrl(tab?.url);
-  // Buttons are always visible when configured; the hint shows where you are.
-  $('onSeek').classList.remove('hidden');
+  const site = siteFor(tab?.url);
+  $('onSeek').classList.remove('hidden'); // buttons always visible when configured
   let host = tab?.url || '(no page)';
   try { host = new URL(tab.url).host; } catch { /* keep raw */ }
-  $('offSeek').textContent = seek ? '' : `Current page: ${host} — open a Seek search or application page to use the buttons.`;
-  $('offSeek').classList.toggle('hidden', seek);
+  $('offSeek').textContent = site ? '' : `Current page: ${host} — open Seek or NSW Health jobs to use the buttons.`;
+  $('offSeek').classList.toggle('hidden', !!site);
 }
 
 async function exec(func, args, allFrames) {
@@ -102,7 +102,7 @@ async function guardRun(fn) {
 async function checkAccount() {
   const guard = $('acctGuard');
   const c = candidate();
-  if (!c || !(await onSeek())) { guard.className = 'note hidden'; return; }
+  if (!c || !(await currentSite())) { guard.className = 'note hidden'; return; }
   let identity = null;
   try { const [r] = await exec(pageReadIdentity); identity = r?.result; } catch { /* not injectable */ }
   const email = (c.email || '').toLowerCase();
@@ -121,19 +121,35 @@ async function checkAccount() {
 }
 
 async function fetchJobs() {
-  if (!(await onSeek())) return status('Open a Seek search page first.', 'warn');
-  status('Reading jobs on this page…');
-  const [r] = await exec(pageScrapeJobs);
+  const site = await currentSite();
+  if (!site) return status('Open a Seek or NSW Health results page first.', 'warn');
+  if (!activeId) return status('Pick a candidate first.', 'warn');
+  status(`Reading ${site.name} jobs on this page…`);
+  const [r] = await exec(site.scrape);
   const jobs = r?.result || [];
-  if (!jobs.length) return status('No Seek job cards found on this page.', 'warn');
+  if (!jobs.length) return status(`No ${site.name} job cards found on this page.`, 'warn');
   status(`Sending ${jobs.length} job(s)…`);
-  const data = await cockpit('/api/driver/jobs/ingest', 'POST', { candidateId: activeId, jobs });
+  const data = await cockpit('/api/driver/jobs/ingest', 'POST', { candidateId: activeId, source: site.source, jobs });
   status(`Ranked ${data.count} job(s) for ${candidate()?.displayName}.`, 'ok');
   renderRanked(data.results || []);
 }
 
+async function sendThisJob() {
+  const site = await currentSite();
+  if (!site) return status('Open a specific job posting first.', 'warn');
+  if (!activeId) return status('Pick a candidate first.', 'warn');
+  status('Reading the full job description…');
+  const [r] = await exec(pageReadCurrentJob);
+  const job = r?.result;
+  if (!job || !job.title) return status('Could not read a job here — open a specific posting.', 'warn');
+  const data = await cockpit('/api/driver/jobs/ingest', 'POST', { candidateId: activeId, source: site.source, jobs: [job] });
+  const one = (data.results || [])[0];
+  status(`Classified “${(job.title || '').slice(0, 40)}” → ${one ? one.sponsorship : 'done'}.`, 'ok');
+  renderRanked(data.results || []);
+}
+
 async function preFill() {
-  if (!(await onSeek())) return status('Open a Seek application page first.', 'warn');
+  if (!(await currentSite())) return status('Open a Seek or NSW Health application page first.', 'warn');
   status('Detecting form fields…');
   const frames = await exec(pageDetectFields, [], true);
   const fields = [];
@@ -199,7 +215,7 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&a
 
 // ── Page-context functions (serialized into the Seek tab) ─────────────────────
 
-function pageScrapeJobs() {
+function pageScrapeJobsSeek() {
   const origin = location.origin;
   // Key off job-title links (Seek's most stable element), not a card container.
   let anchors = Array.from(document.querySelectorAll('a[data-automation="jobTitle"]'));
@@ -242,6 +258,56 @@ function pageScrapeJobs() {
     });
   }
   return out;
+}
+
+function pageScrapeJobsNsw() {
+  // NSW Health careers (jobs.health.nsw.gov.au). Best-effort: job-detail links.
+  const origin = location.origin;
+  let anchors = Array.from(document.querySelectorAll('a[href*="job-details" i], a[href*="jobdetails" i], a[href*="/job/" i], a[href*="jobid" i], a[href*="requisition" i]'));
+  anchors = anchors.filter((a) => (a.innerText || '').trim().length > 6);
+  if (anchors.length === 0) {
+    anchors = Array.from(document.querySelectorAll('h2 a, h3 a, li a, [class*="result" i] a, [class*="job" i] a')).filter(
+      (a) => (a.innerText || '').trim().length > 6 && /job|req|vacan/i.test(a.getAttribute('href') || ''),
+    );
+  }
+  const out = [];
+  const seen = new Set();
+  for (const a of anchors) {
+    const href = a.getAttribute('href') || '';
+    const title = (a.innerText || '').trim();
+    if (!title) continue;
+    const idm = href.match(/(REQ\d+)/i) || href.match(/(\d{5,})/);
+    const externalId = idm ? idm[1] : href;
+    if (seen.has(externalId)) continue;
+    seen.add(externalId);
+    const url = href.startsWith('http') ? href : origin + href;
+    const card = a.closest('li, article, [class*="result" i], [class*="job" i]') || a.parentElement || a;
+    const q = (s) => { const el = card.querySelector(s); return el && el.innerText ? el.innerText.trim() : null; };
+    out.push({
+      externalId,
+      title,
+      employer: q('[class*="organisation" i], [class*="employer" i], [class*="agency" i]') || 'NSW Health',
+      location: q('[class*="location" i]'),
+      url,
+      rawText: ((card.innerText || title)).replace(/\s+/g, ' ').trim().slice(0, 2000),
+    });
+  }
+  return out;
+}
+
+// Reads the FULL job description from a single job page (any supported site) so
+// sponsorship classifies accurately (search cards are too thin to detect it).
+function pageReadCurrentJob() {
+  const url = location.href;
+  const m = url.match(/\/job\/(\d+)/) || url.match(/[?&]jobId=([a-z0-9-]+)/i) || url.match(/(REQ\d+)/i);
+  const externalId = m ? m[1] : url;
+  const titleEl = document.querySelector('[data-automation="job-detail-title"], [data-automation="jobTitle"], h1');
+  const title = ((titleEl && titleEl.innerText) || document.title || '').trim().slice(0, 200);
+  const empEl = document.querySelector('[data-automation="advertiser-name"], [data-automation="job-detail-company-name"], [data-automation="jobCompany"], [class*="organisation" i], [class*="employer" i]');
+  const employer = ((empEl && empEl.innerText) || '').trim() || 'Unknown';
+  const main = document.querySelector('[data-automation="jobAdDetails"], [data-automation="job-detail-description"], [class*="job-detail" i], main, article') || document.body;
+  const rawText = (main.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 12000);
+  return { externalId, title, employer, url, rawText };
 }
 
 function pageDetectFields() {

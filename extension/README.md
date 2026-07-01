@@ -2,10 +2,14 @@
 
 A Chrome/Edge (MV3) extension that gives you **buttons in your own browser** to:
 
-- **Send the Seek jobs on the current page → the cockpit** (classified + ranked for the
-  selected candidate), and
-- **Pre-fill a Seek application** from the candidate's profile, read back what stuck, and
-  show what to fill manually.
+- **Send the jobs on the current results page → the cockpit** (classified + ranked for the
+  selected candidate). Supports **Seek** and **NSW Health** (`jobs.health.nsw.gov.au`).
+- **Send THIS job (full description)** — on a single job's page, sends the full job text so
+  **visa-sponsorship classification is accurate** (search cards are too thin to detect it).
+  The result shows on the cockpit's Jobs & ranking page, where sponsorship-available roles
+  are flagged and sorted to the top.
+- **Pre-fill an application** from the candidate's profile, read back what stuck, and show
+  what to fill manually.
 
 You log into Seek **normally** in your browser; the extension never logs in for you,
 never scrapes server-side, and **never submits** — you review and click Submit.

@@ -18,16 +18,23 @@ interface IngestJob {
   rawText?: string;
 }
 
-// POST /api/driver/jobs/ingest  { candidateId, jobs: IngestJob[] }
-// Upserts Seek postings read from an operator-opened page, deterministically
+const ALLOWED_SOURCES = ['seek', 'nswhealth', 'taleo', 'workday', 'mercury', 'snaphire', 'manual'];
+
+// POST /api/driver/jobs/ingest  { candidateId, source?, jobs: IngestJob[] }
+// Upserts postings read from an operator-opened page, deterministically
 // sponsorship-classifies + ranks them for the candidate (no model cost on bulk;
 // re-run the model per job in the cockpit). Returns a ranked summary.
 export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as { candidateId?: string; jobs?: IngestJob[] };
+  const body = (await req.json().catch(() => ({}))) as {
+    candidateId?: string;
+    source?: string;
+    jobs?: IngestJob[];
+  };
   if (!body.candidateId) return NextResponse.json({ error: 'candidateId required' }, { status: 400 });
   if (!Array.isArray(body.jobs) || body.jobs.length === 0) {
     return NextResponse.json({ error: 'jobs[] required' }, { status: 400 });
   }
+  const source = ALLOWED_SOURCES.includes(body.source || '') ? body.source! : 'seek';
 
   const candidate = await loadCandidateCore(body.candidateId);
   if (!candidate) return NextResponse.json({ error: 'candidate not found' }, { status: 404 });
@@ -40,9 +47,9 @@ export async function POST(req: NextRequest) {
     const rawText = (j.rawText || `${j.title} at ${j.employer}. ${j.location ?? ''}`).slice(0, 20000);
 
     const job = await prisma.job.upsert({
-      where: { source_externalId: { source: 'seek', externalId } },
+      where: { source_externalId: { source, externalId } },
       create: {
-        source: 'seek',
+        source,
         externalId,
         title: j.title,
         employer: j.employer,
