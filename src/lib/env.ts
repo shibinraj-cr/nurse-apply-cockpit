@@ -24,19 +24,27 @@ export const env = {
 
 export const hasAnthropic = env.ANTHROPIC_API_KEY.length > 0;
 
-// Fail CLOSED in production: refuse to run on the bundled, source-published dev
-// defaults (they would make the AES key reproducible and let anyone forge the
-// operator session). The dev workflow uses NODE_ENV=development and is unaffected.
-if (isProd && !isBuildPhase) {
+/** Production secrets still on the bundled dev defaults (empty = all good). */
+export function prodSecretIssues(): string[] {
   const offenders: string[] = [];
-  if (env.SESSION_SECRET.startsWith('dev-only')) offenders.push('SESSION_SECRET');
-  if (env.SESSION_SECRET.length < 32) offenders.push('SESSION_SECRET (must be >= 32 chars)');
+  if (env.SESSION_SECRET.startsWith('dev-only') || env.SESSION_SECRET.length < 32) {
+    offenders.push('SESSION_SECRET');
+  }
   if (env.APP_ENCRYPTION_KEY.startsWith('dev-only')) offenders.push('APP_ENCRYPTION_KEY');
   if (env.OPERATOR_PASSWORD === 'cockpit-dev') offenders.push('OPERATOR_PASSWORD');
+  return offenders;
+}
+
+// Loud WARNING (not a hard throw) if production is on the source-published dev
+// defaults — throwing here would run inside the edge middleware and take the whole
+// site down with a cryptic 500. Enforcement lives in Node paths (see login action).
+if (isProd && !isBuildPhase) {
+  const offenders = prodSecretIssues();
   if (offenders.length) {
-    throw new Error(
-      `[cockpit] Refusing to start in production with default/weak secrets: ${offenders.join(', ')}. ` +
-        'Set real values in the environment (see .env.example).',
+    // eslint-disable-next-line no-console
+    console.error(
+      `[cockpit] WARNING: running in production with default/weak secrets: ${offenders.join(', ')}. ` +
+        'Set real values (see DEPLOY.md) — the app runs, but this is insecure.',
     );
   }
 }
